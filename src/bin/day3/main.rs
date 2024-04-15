@@ -49,73 +49,54 @@ impl FromStr for Claim {
 // - Y axis extends from top to bottom
 // - Top-left corner as the origin
 fn fabric_overlap(claims: &[Claim]) -> usize {
-    // Sort claims by their X coordinates, with each claim's left and right edges as two separate X coordinates.
-    let mut x_sorted: Vec<_> = claims
-        .iter()
-        .flat_map(|c| [(c.left, c), (c.right, c)])
-        .collect();
-    x_sorted.sort_by_key(|&(x, _)| x);
+    // Sort claims by left coordinate.
+    let claims_sorted_by_left = sort_claims_by_left(claims);
 
-    // Sort claims by their X coordinates, with each claim's top and bottom edges as two separate Y coordinates.
-    let mut y_sorted: Vec<_> = claims
-        .iter()
-        .flat_map(|c| [(c.top, c), (c.bottom, c)])
-        .collect();
-    y_sorted.sort_by_key(|&(y, _)| y);
+    // Collect X coordinates from claims, with each claim's left and right edges as two separate X coordinates.
+    let x_coords = collect_coords(claims, |c| [c.left, c.right]);
+
+    // Collect Y coordinates from claims, with each claim's top and bottom edges as two separate Y coordinates.
+    let y_coords = collect_coords(claims, |c| [c.top, c.bottom]);
 
     // Total area of overlapping
     let mut total_overlap = 0;
 
     // Every two adjacent (distinct) X coordinates and two adjacent (distinct) Y coordinates define a grid.
     // NOTE: Multiple claims may share the same X/Y coordinate.
-    let mut left_idx = 0; // Grid's left coordinate's index
-    while left_idx < x_sorted.len() - 1 {
-        let (left, _) = x_sorted[left_idx];
+    for [left, right] in x_coords.windows(2).map(|w| [w[0], w[1]]) {
+        for [top, bottom] in y_coords.windows(2).map(|w| [w[0], w[1]]) {
+            let mut appear_prev = None;
 
-        // Find grid's right coordinate
-        let (right_idx, right) = match x_sorted[left_idx + 1..]
-            .iter()
-            .enumerate()
-            .find(|(_, &(right, _))| right > left)
-        {
-            Some((relative_idx, &(right, _))) => (left_idx + 1 + relative_idx, right),
-            None => break,
-        };
-
-        // Iterate over all Y coordinates.
-        let mut top_idx = 0; // Grid's top edge's index
-        while top_idx < y_sorted.len() - 1 {
-            let (top, _) = y_sorted[top_idx];
-            let (bottom_idx, bottom) = match y_sorted[top_idx + 1..]
-                .iter()
-                .enumerate()
-                .find(|(_, &(bottom, _))| bottom > top)
-            {
-                Some((relative_idx, &(bottom, _))) => (top_idx + 1 + relative_idx, bottom),
-                None => break,
-            };
-
-            // Check if current grid is within two or more claims.
-            // Note: Only need to check claims sorted before current grid's right coordinate, because for some claim
-            // covers current grid it must have smaller left coordinate and all such claims already in the front.
-            let mut appear_prev = false;
-            for &(_, c) in &x_sorted[..right_idx] {
+            for c in claims_sorted_by_left.iter().take_while(|c| c.left <= left) {
                 if c.right >= right && c.top <= top && c.bottom >= bottom {
-                    if appear_prev {
+                    if let Some(_) = appear_prev {
                         total_overlap += (right - left) * (bottom - top);
                         break;
                     }
-                    appear_prev = true;
+                    appear_prev = Some(c);
                 }
             }
-
-            top_idx = bottom_idx;
         }
-
-        left_idx = right_idx;
     }
 
     total_overlap
+}
+
+fn sort_claims_by_left(claims: &[Claim]) -> Vec<&Claim> {
+    let mut sorted: Vec<_> = claims.iter().map(|c| c).collect();
+    sorted.sort_by_key(|c| c.left);
+    sorted
+}
+
+fn collect_coords<U, F>(claims: &[Claim], f: F) -> Vec<usize>
+where
+    U: IntoIterator<Item = usize>,
+    F: Fn(&Claim) -> U,
+{
+    let mut coords: Vec<usize> = claims.iter().flat_map(f).collect();
+    coords.sort();
+    coords.dedup();
+    coords
 }
 
 // Find claims not overlapping with others.
